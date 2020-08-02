@@ -4,22 +4,27 @@ import requests
 import re
 import pprint
 import apt_pkg
+import multiprocessing as mp
 
 class LinuxKernel:
     """A Kernel on mainline"""
 
     URI_KERNEL_UBUNTU_MAINLINE = 'http://kernel.ubuntu.com/~kernel-ppa/mainline/'
+    NUM_WORKERS = 4
 
     def __init__(self):
+        self.kernels = {}
         apt_pkg.init()
         self.arch = self._get_arch()
-        self.init_res()
-        self.kernels = self._init_kernels()
+        self.init_regexes()
+        # Get a list of installed linux-image packages
+        pkg_list = PackageList()
+        self._init_kernels(pkg_list.get_versions('linux-image'))
 
     def _get_arch(self):
         return apt_pkg.get_architectures()[0]
     
-    def init_res(self):
+    def init_regexes(self):
         self.rex_index = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._]+)[\/]*<\/a>')
         self.rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
         self.rex_header = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
@@ -29,70 +34,95 @@ class LinuxKernel:
         self.rex_image_extra = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
         self.rex_modules = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
 
-    def _init_kernels(self):
-        kernels = {}
-
-        # Get a list of installed linux-image packages
-        pkg_list = PackageList()
-        installed = pkg_list.get_versions('linux-image')
-
+    def _init_kernels(self, installed):
+        # Get the main page with the list of kernel version
         r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
-        # FIXME: Sort out if the key has the 'v' prefix or not
-        # Should it also contain another version with or without
-        # If the version without the 'v' prefix is in installed, then set entry['installed'] = 1
+        # Create a queue to submit requests for each version
+        version_queue = mp.Queue()
+
+        # Create a pool of workers
+        pool = mp.Pool(processes=self.NUM_WORKERS)
+
+        # Attach a process to each worker and start it
+        workers = [
+            mp.Process(
+                target=self.add_version, args=(version_queue,installed)
+            )
+            for _ in range(self.NUM_WORKERS)
+        ]
+        for worker in workers:
+            worker.start()
+
+        # Iterate through all the versions and add them to the queue
         for line in self.rex_index.findall(r.text):
             url = r.url + line[0]
             version = line[1]
-            if version.startswith('v'):
-                entry = {}
-                rver = requests.get(url)
+            version_queue.put({ 'url': url, 'version': version})
 
-                real_versions = self.rex_version.findall(rver.text)
-                if not real_versions:
+        # Stop all the workers
+        for _ in range(self.NUM_WORKERS):
+            version_queue.put('STOP')
+        for worker in workers:
+            worker.join()
+
+    def add_version(self, version_queue, installed):
+        while True:
+            new_version = version_queue.get()
+            if new_version == 'STOP':
+                break
+
+            url = new_version['url']
+            version = new_version['version']
+            entry = {}
+
+            # Grab the version page
+            rver = requests.get(url)
+            # The version can be extracted from the .deb filenames
+            deb_versions = self.rex_version.findall(rver.text)
+            # If we can't extract the version, then skip it
+            if not deb_versions:
+                continue
+            deb_version = deb_versions[0]
+            print("Processing version %s (%s)" % ( version, deb_version ))
+
+            # Extract the urls for our architecture
+            # Especially for the all debs, these are listed multiple times
+            # per architecture, so use a dict to make them unique
+            urls = {}
+
+            for debs in self.rex.findall(rver.text):
+                # First group is the uri - so add the base url
+                file_url = rver.url + debs[0]
+                # Second group is the embedded version in the deb filename
+                file_name = debs[1]
+
+                if self.rex_header.match(file_name):
+                    urls[file_url] = 1
+                elif self.rex_header_all.match(file_name):
+                    urls[file_url] = 1
+                elif self.rex_image.match(file_name):
+                    urls[file_url] = 1
+                elif self.rex_image_extra.match(file_name):
+                    urls[file_url] = 1
+                elif self.rex_modules.match(file_name):
+                    urls[file_url] = 1
+                else:
                     continue
-                entry['url'] = url
-                entry['version'] = real_versions[0]
-                entry['urls'] = []
-                entry['installed'] = real_versions[0] in installed
-                kernels[version] = entry
 
-        return kernels
+            entry['urls'] = list(urls.keys())
+            entry['url'] = url
+            entry['version'] = deb_version
+            entry['installed'] = deb_version in installed
+            self.kernels[version] = entry.copy()
 
     def versions(self):
         versions = sorted(self.kernels.keys())
         return versions
 
-    def _get_kernel_urls(self, url):
-        urls_dict = {}
-
-        r = requests.get(url)
-
-        for line in self.rex.findall(r.text):
-            file_url = r.url + line[0]
-            file_name = line[1]
-
-            if self.rex_header.match(file_name):
-                urls_dict[file_url] = 1
-            elif self.rex_header_all.match(file_name):
-                urls_dict[file_url] = 1
-            elif self.rex_image.match(file_name):
-                urls_dict[file_url] = 1
-            elif self.rex_image_extra.match(file_name):
-                urls_dict[file_url] = 1
-            elif self.rex_modules.match(file_name):
-                urls_dict[file_url] = 1
-            else:
-                continue
-
-        return list(urls_dict.keys())
-
     def get_kernel(self, version):
-        #self.kernels[version]['urls'] = self._get_kernel_urls(self.kernels[version]['url'])
-        kernel = self.kernels[version]
-        kernel['urls'] = self._get_kernel_urls(kernel['url'])
+        return self.kernels[version]
 
-        return kernel
 
 class Package:
     """ Represents a package """
