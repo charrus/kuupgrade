@@ -53,7 +53,7 @@ class LinuxKernels:
         remaining = self.NUM_WORKERS
 
         while True:
-            result = self.result_queue.get()kupg
+            result = self.result_queue.get()
             if result == 'STOP':
                 remaining -= 1
                 if remaining == 0:
