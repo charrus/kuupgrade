@@ -13,14 +13,24 @@ class LinuxKernel:
     def __init__(self):
         apt_pkg.init()
         self.arch = self._get_arch()
-        self.kernels = self._get_kernels()
+        self.init_res()
+        self.kernels = self._init_kernels()
 
     def _get_arch(self):
         return apt_pkg.get_architectures()[0]
     
-    def _get_kernels(self):
+    def init_res(self):
+        self.rex_index = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._]+)[\/]*<\/a>')
+        self.rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
+        self.rex_header = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+        self.rex_header_all = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
+        self.rex_version = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
+        self.rex_image = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
+        self.rex_image_extra = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+        self.rex_modules = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+
+    def _init_kernels(self):
         kernels = {}
-        rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._]+)[\/]*<\/a>')
 
         # Get a list of installed linux-image packages
         pkg_list = PackageList()
@@ -31,12 +41,20 @@ class LinuxKernel:
         # FIXME: Sort out if the key has the 'v' prefix or not
         # Should it also contain another version with or without
         # If the version without the 'v' prefix is in installed, then set entry['installed'] = 1
-        for line in rex.findall(r.text):
+        for line in self.rex_index.findall(r.text):
             url = r.url + line[0]
             version = line[1]
             if version.startswith('v'):
-                entry = { 'url': url + '/' + self.arch }
-                version = version[1:]
+                entry = {}
+                rver = requests.get(url)
+
+                real_versions = self.rex_version.findall(rver.text)
+                if not real_versions:
+                    continue
+                entry['url'] = url
+                entry['version'] = real_versions[0]
+                entry['urls'] = []
+                entry['installed'] = real_versions[0] in installed
                 kernels[version] = entry
 
         return kernels
@@ -45,35 +63,36 @@ class LinuxKernel:
         versions = sorted(self.kernels.keys())
         return versions
 
-    def get_kernel_urls(self, version):
-        urls = []
-        rex = re.compile(r'<a href="([a-zA-Z0-9\-._]+)">([a-zA-Z0-9\-._]+)<\/a>')
-        rex_header = re.compile(r'linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-        rex_header_all = re.compile(r'linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
-        rex_image = re.compile('linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
-        rex_image_extra = re.compile('linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-        rex_modules = re.compile('linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+    def _get_kernel_urls(self, url):
+        urls_dict = {}
 
-        r = requests.get(self.kernels[version])
+        r = requests.get(url)
 
-        for line in rex.findall(r.text):
+        for line in self.rex.findall(r.text):
             file_url = r.url + line[0]
             file_name = line[1]
 
-            if rex_header.match(file_name):
-                urls.append(file_url)
-            elif rex_header_all.match(file_name):
-                urls.append(file_url)
-            elif rex_image.match(file_name):
-                urls.append(file_url)
-            elif rex_image_extra.match(file_name):
-                urls.append(file_url)
-            elif rex_modules.match(file_name):
-                urls.append(file_url)
+            if self.rex_header.match(file_name):
+                urls_dict[file_url] = 1
+            elif self.rex_header_all.match(file_name):
+                urls_dict[file_url] = 1
+            elif self.rex_image.match(file_name):
+                urls_dict[file_url] = 1
+            elif self.rex_image_extra.match(file_name):
+                urls_dict[file_url] = 1
+            elif self.rex_modules.match(file_name):
+                urls_dict[file_url] = 1
             else:
                 continue
 
-        return urls
+        return list(urls_dict.keys())
+
+    def get_kernel(self, version):
+        #self.kernels[version]['urls'] = self._get_kernel_urls(self.kernels[version]['url'])
+        kernel = self.kernels[version]
+        kernel['urls'] = self._get_kernel_urls(kernel['url'])
+
+        return kernel
 
 class Package:
     """ Represents a package """
@@ -92,22 +111,17 @@ class PackageList:
         import subprocess
 
         packages = {}
-
         result = subprocess.run(['dpkg', '-l'], stdout=subprocess.PIPE)
 
         for dpkg in result.stdout.decode('utf-8').splitlines():
             fields = dpkg.split()
-
             if len(fields) < 5:
                 continue
-
             status = fields[0]
             name = fields[1]
             version = fields[2]
-            
             if status != 'ii':
                 continue
-
             pkg_id = name + '|' + version
             packages[pkg_id] = Package(name, version)
 
@@ -115,11 +129,9 @@ class PackageList:
 
     def get_versions(self, name):
         versions = []
-
         for pkg_id in self.packages.keys():
             if pkg_id.startswith(name):
                 versions.append(self.packages[pkg_id].version)
-
         return versions
 
 def main():
@@ -128,15 +140,15 @@ def main():
     kernel = LinuxKernel()
     versions = kernel.versions()
     pprint.pprint(versions)
-    urls = kernel.get_kernel_urls('v5.7.12')
+    kernel = kernel.get_kernel('v5.6.19')
 
-    pprint.pprint(urls)
+    pprint.pprint(kernel)
 
-    pkg_list = PackageList()
+    #pkg_list = PackageList()
 
-    versions = pkg_list.get_versions('linux-image')
+    #versions = pkg_list.get_versions('linux-image')
 
-    pprint.pprint(versions)
+    #pprint.pprint(versions)
  
 if __name__ == '__main__':
     main()
