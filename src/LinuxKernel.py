@@ -6,21 +6,65 @@ import pprint
 import apt_pkg
 import multiprocessing as mp
 
-class LinuxKernel:
+class LinuxKernels:
     """A Kernel on mainline"""
 
     URI_KERNEL_UBUNTU_MAINLINE = 'http://kernel.ubuntu.com/~kernel-ppa/mainline/'
-    NUM_WORKERS = 4
+    NUM_WORKERS = 8
 
     def __init__(self):
         self.kernels = {}
+        pkg_list = PackageList()
+        self.installed = pkg_list.get_versions('linux-image')
+
+    def init(self):
         apt_pkg.init()
         self.arch = self._get_arch()
         self.init_regexes()
-        # Get a list of installed linux-image packages
-        pkg_list = PackageList()
-        self._init_kernels(pkg_list.get_versions('linux-image'))
+        r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
+        # Create a queue to submit requests for each version
+        self.query_queue = mp.Queue()
+        self.result_queue = mp.Queue()
+
+        # Attach a process to each worker and start it
+        self.workers = [
+            mp.Process(
+                target=self.add_version, args=(self.query_queue,self.result_queue)
+            )
+            for _ in range(self.NUM_WORKERS)
+        ]
+        for worker in self.workers:
+            worker.start()
+
+        num_jobs = 0
+
+        # Iterate through all the versions and add them to the queue
+        for line in self.rex_index.findall(r.text):
+            url = r.url + line[0]
+            version = line[1]
+            self.query_queue.put({ 'url': url, 'version': version})
+            num_jobs += 1
+
+        # Stop all the workers
+        for _ in range(self.NUM_WORKERS):
+            self.query_queue.put('STOP')
+
+        remaining = self.NUM_WORKERS
+
+        while True:
+            result = self.result_queue.get()
+            if result == 'STOP':
+                remaining -= 1
+                if remaining == 0:
+                    break
+                else:
+                    continue
+            version = result['version']
+            data = result['data']
+            self.kernels[version] = data
+
+        
     def _get_arch(self):
         return apt_pkg.get_architectures()[0]
     
@@ -29,67 +73,34 @@ class LinuxKernel:
         self.rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
         self.rex_header = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
         self.rex_header_all = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
-        self.rex_version = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
         self.rex_image = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
         self.rex_image_extra = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
         self.rex_modules = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
 
-    def _init_kernels(self, installed):
-        # Get the main page with the list of kernel version
-        r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
-
-        # Create a queue to submit requests for each version
-        version_queue = mp.Queue()
-
-        # Create a pool of workers
-        pool = mp.Pool(processes=self.NUM_WORKERS)
-
-        # Attach a process to each worker and start it
-        workers = [
-            mp.Process(
-                target=self.add_version, args=(version_queue,installed)
-            )
-            for _ in range(self.NUM_WORKERS)
-        ]
-        for worker in workers:
-            worker.start()
-
-        # Iterate through all the versions and add them to the queue
-        for line in self.rex_index.findall(r.text):
-            url = r.url + line[0]
-            version = line[1]
-            version_queue.put({ 'url': url, 'version': version})
-
-        # Stop all the workers
-        for _ in range(self.NUM_WORKERS):
-            version_queue.put('STOP')
-        for worker in workers:
-            worker.join()
-
-    def add_version(self, version_queue, installed):
+    def add_version(self, query_queue, result_queue):
         while True:
-            new_version = version_queue.get()
+            new_version = query_queue.get()
             if new_version == 'STOP':
+                result_queue.put('STOP')
                 break
 
             url = new_version['url']
             version = new_version['version']
             entry = {}
 
-            # Grab the version page
-            rver = requests.get(url)
-            # The version can be extracted from the .deb filenames
-            deb_versions = self.rex_version.findall(rver.text)
-            # If we can't extract the version, then skip it
-            if not deb_versions:
-                continue
-            deb_version = deb_versions[0]
-            print("Processing version %s (%s)" % ( version, deb_version ))
-
             # Extract the urls for our architecture
             # Especially for the all debs, these are listed multiple times
             # per architecture, so use a dict to make them unique
             urls = {}
+
+            # Grab the version page
+            rver = requests.get(url)
+            # The version can be extracted from the .deb filenames
+            deb_versions = self.rex_index.findall(rver.text)
+            # If we can't extract the version, then skip it
+            if not deb_versions:
+                continue
+            deb_version = deb_versions[0]
 
             for debs in self.rex.findall(rver.text):
                 # First group is the uri - so add the base url
@@ -103,6 +114,7 @@ class LinuxKernel:
                     urls[file_url] = 1
                 elif self.rex_image.match(file_name):
                     urls[file_url] = 1
+                    deb_version = deb_versions[0]
                 elif self.rex_image_extra.match(file_name):
                     urls[file_url] = 1
                 elif self.rex_modules.match(file_name):
@@ -113,8 +125,8 @@ class LinuxKernel:
             entry['urls'] = list(urls.keys())
             entry['url'] = url
             entry['version'] = deb_version
-            entry['installed'] = deb_version in installed
-            self.kernels[version] = entry.copy()
+            entry['installed'] = deb_version in self.installed
+            result_queue.put({ 'version': version, 'data': entry})
 
     def versions(self):
         versions = sorted(self.kernels.keys())
@@ -167,7 +179,8 @@ class PackageList:
 def main():
     import pprint
 
-    kernel = LinuxKernel()
+    kernel = LinuxKernels()
+    kernel.init()
     versions = kernel.versions()
     pprint.pprint(versions)
     kernel = kernel.get_kernel('v5.6.19')
