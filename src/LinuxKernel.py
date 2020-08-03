@@ -185,11 +185,11 @@ def main():
         installed = ""
 
         if instance['running']:
-            running = "Running"
+            running = "[Running]"
         if instance['installed']:
-            installed = "Installed"
+            installed = "[Installed]"
 
-        print("%s %s %s" % (version, running, installed))
+        print("Kernel version: %s Debian version: %s %s %s" % (version, instance['version'], running, installed))
 
     #pprint.pprint(versions)
     #kernel = kernel.get_kernel('v5.6.19')
