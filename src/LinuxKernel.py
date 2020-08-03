@@ -5,12 +5,13 @@ import re
 import pprint
 import apt_pkg
 import multiprocessing as mp
+import subprocess
 
 class LinuxKernels:
     """A Kernel on mainline"""
 
     URI_KERNEL_UBUNTU_MAINLINE = 'http://kernel.ubuntu.com/~kernel-ppa/mainline/'
-    NUM_WORKERS = 8
+    NUM_WORKERS = 16
 
     def __init__(self):
         self.kernels = {}
@@ -21,6 +22,8 @@ class LinuxKernels:
         apt_pkg.init()
         self.arch = self._get_arch()
         self.init_regexes()
+        result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
+        self.running_kernel = result.stdout.decode()
         r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
         # Create a queue to submit requests for each version
@@ -96,7 +99,7 @@ class LinuxKernels:
             # Grab the version page
             rver = requests.get(url)
             # The version can be extracted from the .deb filenames
-            deb_versions = self.rex_index.findall(rver.text)
+            deb_versions = self.rex_image.findall(rver.text)
             # If we can't extract the version, then skip it
             if not deb_versions:
                 continue
@@ -114,7 +117,6 @@ class LinuxKernels:
                     urls[file_url] = 1
                 elif self.rex_image.match(file_name):
                     urls[file_url] = 1
-                    deb_version = deb_versions[0]
                 elif self.rex_image_extra.match(file_name):
                     urls[file_url] = 1
                 elif self.rex_modules.match(file_name):
@@ -126,6 +128,7 @@ class LinuxKernels:
             entry['url'] = url
             entry['version'] = deb_version
             entry['installed'] = deb_version in self.installed
+            entry['running'] = deb_version == self.running_kernel
             result_queue.put({ 'version': version, 'data': entry})
 
     def versions(self):
@@ -136,13 +139,6 @@ class LinuxKernels:
         return self.kernels[version]
 
 
-class Package:
-    """ Represents a package """
-
-    def __init__(self, name, version):
-        self.name = name
-        self.version = version
-
 class PackageList:
     """ Represents a list of installed packages """
 
@@ -150,8 +146,6 @@ class PackageList:
         self.packages = self.installed_packages()
 
     def installed_packages(self):
-        import subprocess
-
         packages = {}
         result = subprocess.run(['dpkg', '-l'], stdout=subprocess.PIPE)
 
@@ -165,7 +159,7 @@ class PackageList:
             if status != 'ii':
                 continue
             pkg_id = name + '|' + version
-            packages[pkg_id] = Package(name, version)
+            packages[pkg_id] = { 'name': name, 'version': version }
 
         return packages
 
@@ -173,25 +167,34 @@ class PackageList:
         versions = []
         for pkg_id in self.packages.keys():
             if pkg_id.startswith(name):
-                versions.append(self.packages[pkg_id].version)
+                versions.append(self.packages[pkg_id]['version'])
         return versions
 
 def main():
     import pprint
 
+    print("Initialising available kernels...")
     kernel = LinuxKernels()
     kernel.init()
+    print("Doen")
     versions = kernel.versions()
-    pprint.pprint(versions)
-    kernel = kernel.get_kernel('v5.6.19')
 
-    pprint.pprint(kernel)
+    for version in kernel.versions():
+        instance = kernel.get_kernel(version)
+        running = ""
+        installed = ""
 
-    #pkg_list = PackageList()
+        if instance['running']:
+            running = "Running"
+        if instance['installed']:
+            installed = "Installed"
 
-    #versions = pkg_list.get_versions('linux-image')
+        print("%s %s %s" % (version, running, installed))
 
     #pprint.pprint(versions)
- 
+    #kernel = kernel.get_kernel('v5.6.19')
+
+    #pprint.pprint(kernel)
+
 if __name__ == '__main__':
     main()
