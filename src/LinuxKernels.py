@@ -97,8 +97,6 @@ class LinuxKernels:
         for worker in self.workers:
             worker.start()
 
-        num_jobs = 0
-
         # Iterate through all the versions and add them to the queue
         for line in REX_INDEX.findall(r.text):
             url = r.url + line[0]
