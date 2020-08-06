@@ -10,18 +10,18 @@ import subprocess
 class LinuxKernel:
     """A Kernel on mainline"""
 
+    REX = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
+    REX_HEADER = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+    REX_HEADER_ALL = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
+    REX_IMAGE = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
+    REX_IMAGE_EXTRA = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+    REX_MODULES = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+
     def __init__(self, version, arch, url):
         self.url = url
         self.version = version
         self.arch = arch
         self.deb_version = None
-
-        rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
-        rex_header = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-        rex_header_all = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
-        rex_image = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
-        rex_image_extra = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-        rex_modules = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
 
         # Extract the urls for our architecture
         # Especially for the all debs, these are listed multiple times
@@ -31,27 +31,27 @@ class LinuxKernel:
         # Grab the version page
         rver = requests.get(url)
         # The version can be extracted from the .deb filenames
-        deb_versions = rex_image.findall(rver.text)
+        deb_versions = REX_IMAGE.findall(rver.text)
         # If we can't extract the version, then skip it
         if not deb_versions:
             return None
         self.deb_version = deb_versions[0]
 
-        for debs in rex.findall(rver.text):
+        for debs in REX.findall(rver.text):
             # First group is the uri - so add the base url
             file_url = rver.url + debs[0]
             # Second group is the embedded version in the deb filename
             file_name = debs[1]
 
-            if rex_header.match(file_name):
+            if REX_HEADER.match(file_name):
                 urls[file_url] = 1
-            elif rex_header_all.match(file_name):
+            elif REX_HEADER_ALL.match(file_name):
                 urls[file_url] = 1
-            elif rex_image.match(file_name):
+            elif REX_IMAGE.match(file_name):
                 urls[file_url] = 1
-            elif rex_image_extra.match(file_name):
+            elif REX_IMAGE_EXTRA.match(file_name):
                 urls[file_url] = 1
-            elif rex_modules.match(file_name):
+            elif REX_MODULES.match(file_name):
                 urls[file_url] = 1
             else:
                 continue
@@ -66,6 +66,7 @@ class LinuxKernels:
 
     URI_KERNEL_UBUNTU_MAINLINE = 'http://kernel.ubuntu.com/~kernel-ppa/mainline/'
     NUM_WORKERS = 16
+    REX_INDEX = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
 
     def __init__(self):
         self.kernels = []
@@ -78,7 +79,6 @@ class LinuxKernels:
     def init(self):
         apt_pkg.init()
         self.arch = self._get_arch()
-        rex_index = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
         result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
         self.running_kernel = result.stdout.decode()
         r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
@@ -100,7 +100,7 @@ class LinuxKernels:
         num_jobs = 0
 
         # Iterate through all the versions and add them to the queue
-        for line in rex_index.findall(r.text):
+        for line in REX_INDEX.findall(r.text):
             url = r.url + line[0]
             version = line[1]
             self.query_queue.put({ 'url': url, 'version': version})
