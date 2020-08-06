@@ -7,8 +7,22 @@ import apt_pkg
 import multiprocessing as mp
 import subprocess
 
-class LinuxKernels:
+class LinuxKernel:
     """A Kernel on mainline"""
+
+    def __init__(self, version, url, urls, deb_version, installed, running):
+        self.urls = urls
+        self.url = url
+        self.version = version
+        self.deb_version = deb_version
+        self.installed = installed
+        self.running = running
+
+    def __str__(self):
+        return self.version
+
+class LinuxKernels:
+    """All Kernel on mainline"""
 
     URI_KERNEL_UBUNTU_MAINLINE = 'http://kernel.ubuntu.com/~kernel-ppa/mainline/'
     NUM_WORKERS = 16
@@ -88,7 +102,6 @@ class LinuxKernels:
 
             url = new_version['url']
             version = new_version['version']
-            entry = {}
 
             # Extract the urls for our architecture
             # Especially for the all debs, these are listed multiple times
@@ -123,21 +136,15 @@ class LinuxKernels:
                 else:
                     continue
 
-            entry['urls'] = list(urls.keys())
-            entry['url'] = url
-            entry['version'] = version
-            entry['deb_version'] = deb_version
-            entry['installed'] = deb_version in self.installed
-            entry['running'] = deb_version == self.running_kernel
-            result_queue.put(entry)
-
-    def versions(self):
-        versions = sorted(self.kernels.keys())
-        return versions
-
-    def get_kernel(self, version):
-        return self.kernels[version]
-
+            installed = deb_version in self.installed
+            running = deb_version == self.running_kernel
+            kernel = LinuxKernel(version=version,
+                                 deb_version=deb_version,
+                                 url=url,
+                                 urls=list(urls.keys()),
+                                 installed=installed,
+                                 running=running)
+            result_queue.put(kernel)
 
 class LinuxKernelsIterator:
     def __init__(self, kernels):
