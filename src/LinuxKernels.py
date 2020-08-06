@@ -10,13 +10,53 @@ import subprocess
 class LinuxKernel:
     """A Kernel on mainline"""
 
-    def __init__(self, version, url, urls, deb_version, installed, running):
-        self.urls = urls
+    def __init__(self, version, arch, url):
         self.url = url
         self.version = version
-        self.deb_version = deb_version
-        self.installed = installed
-        self.running = running
+        self.arch = arch
+        self.deb_version = None
+
+        rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
+        rex_header = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+        rex_header_all = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
+        rex_image = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
+        rex_image_extra = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+        rex_modules = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+
+        # Extract the urls for our architecture
+        # Especially for the all debs, these are listed multiple times
+        # per architecture, so use a dict to make them unique
+        urls = {}
+
+        # Grab the version page
+        rver = requests.get(url)
+        # The version can be extracted from the .deb filenames
+        deb_versions = rex_image.findall(rver.text)
+        # If we can't extract the version, then skip it
+        if not deb_versions:
+            return None
+        self.deb_version = deb_versions[0]
+
+        for debs in rex.findall(rver.text):
+            # First group is the uri - so add the base url
+            file_url = rver.url + debs[0]
+            # Second group is the embedded version in the deb filename
+            file_name = debs[1]
+
+            if rex_header.match(file_name):
+                urls[file_url] = 1
+            elif rex_header_all.match(file_name):
+                urls[file_url] = 1
+            elif rex_image.match(file_name):
+                urls[file_url] = 1
+            elif rex_image_extra.match(file_name):
+                urls[file_url] = 1
+            elif rex_modules.match(file_name):
+                urls[file_url] = 1
+            else:
+                continue
+
+        self.urls = list(urls.keys())
 
     def __str__(self):
         return self.version
@@ -38,7 +78,7 @@ class LinuxKernels:
     def init(self):
         apt_pkg.init()
         self.arch = self._get_arch()
-        self.init_regexes()
+        rex_index = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
         result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
         self.running_kernel = result.stdout.decode()
         r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
@@ -60,7 +100,7 @@ class LinuxKernels:
         num_jobs = 0
 
         # Iterate through all the versions and add them to the queue
-        for line in self.rex_index.findall(r.text):
+        for line in rex_index.findall(r.text):
             url = r.url + line[0]
             version = line[1]
             self.query_queue.put({ 'url': url, 'version': version})
@@ -84,15 +124,6 @@ class LinuxKernels:
     def _get_arch(self):
         return apt_pkg.get_architectures()[0]
     
-    def init_regexes(self):
-        self.rex_index = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
-        self.rex = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
-        self.rex_header = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-        self.rex_header_all = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
-        self.rex_image = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
-        self.rex_image_extra = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-        self.rex_modules = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-
     def add_version(self, query_queue, result_queue):
         while True:
             new_version = query_queue.get()
@@ -103,48 +134,13 @@ class LinuxKernels:
             url = new_version['url']
             version = new_version['version']
 
-            # Extract the urls for our architecture
-            # Especially for the all debs, these are listed multiple times
-            # per architecture, so use a dict to make them unique
-            urls = {}
-
-            # Grab the version page
-            rver = requests.get(url)
-            # The version can be extracted from the .deb filenames
-            deb_versions = self.rex_image.findall(rver.text)
-            # If we can't extract the version, then skip it
-            if not deb_versions:
-                continue
-            deb_version = deb_versions[0]
-
-            for debs in self.rex.findall(rver.text):
-                # First group is the uri - so add the base url
-                file_url = rver.url + debs[0]
-                # Second group is the embedded version in the deb filename
-                file_name = debs[1]
-
-                if self.rex_header.match(file_name):
-                    urls[file_url] = 1
-                elif self.rex_header_all.match(file_name):
-                    urls[file_url] = 1
-                elif self.rex_image.match(file_name):
-                    urls[file_url] = 1
-                elif self.rex_image_extra.match(file_name):
-                    urls[file_url] = 1
-                elif self.rex_modules.match(file_name):
-                    urls[file_url] = 1
-                else:
-                    continue
-
-            installed = deb_version in self.installed
-            running = deb_version == self.running_kernel
-            kernel = LinuxKernel(version=version,
-                                 deb_version=deb_version,
-                                 url=url,
-                                 urls=list(urls.keys()),
-                                 installed=installed,
-                                 running=running)
-            result_queue.put(kernel)
+            kernel = LinuxKernel(version=new_version['version'],
+                                 arch=self.arch,
+                                 url=new_version['url'])
+            if(kernel):
+                kernel.installed = kernel.deb_version in self.installed
+                kernel.running = kernel.deb_version == self.running_kernel
+                result_queue.put(kernel)
 
 class LinuxKernelsIterator:
     def __init__(self, kernels):
