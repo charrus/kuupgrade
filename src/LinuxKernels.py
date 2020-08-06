@@ -10,18 +10,18 @@ import subprocess
 class LinuxKernel:
     """A Kernel on mainline"""
 
-    REX = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
-    REX_HEADER = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-    REX_HEADER_ALL = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
-    REX_IMAGE = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
-    REX_IMAGE_EXTRA = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-    REX_MODULES = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
-
     def __init__(self, version, arch, url):
         self.url = url
         self.version = version
         self.arch = arch
         self.deb_version = None
+
+        REX = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
+        REX_HEADER_ALL = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*_all.deb')
+        REX_HEADER = re.compile(r'[a-zA-Z0-9\-._\/]*linux-headers-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+        REX_IMAGE = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-[a-zA-Z0-9.\-_]*generic_([a-zA-Z0-9.\-]*)_' + self.arch + r'.deb')
+        REX_IMAGE_EXTRA = re.compile(r'[a-zA-Z0-9\-._\/]*linux-image-extra-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
+        REX_MODULES = re.compile(r'[a-zA-Z0-9\-._\/]*linux-modules-[a-zA-Z0-9.\-_]*generic_[a-zA-Z0-9.\-]*_' + self.arch + r'.deb')
 
         # Extract the urls for our architecture
         # Especially for the all debs, these are listed multiple times
@@ -66,21 +66,25 @@ class LinuxKernels:
 
     URI_KERNEL_UBUNTU_MAINLINE = 'http://kernel.ubuntu.com/~kernel-ppa/mainline/'
     NUM_WORKERS = 16
-    REX_INDEX = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
 
     def __init__(self):
         self.kernels = []
         pkg_list = PackageList()
         self.installed = pkg_list.get_versions('linux-image')
+        apt_pkg.init()
+        self.arch = self._get_arch()
+        result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
+        self.running_kernel = result.stdout.decode()
 
     def __iter__(self):
         return LinuxKernelsIterator(self)
 
     def init(self):
-        apt_pkg.init()
-        self.arch = self._get_arch()
-        result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
-        self.running_kernel = result.stdout.decode()
+        # Not in the constructor as this bit paralellises fetching the
+        # kernel for performance
+        REX_INDEX = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
+
+        # Grab the main page
         r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
         # Create a queue to submit requests for each version
