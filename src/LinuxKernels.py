@@ -65,7 +65,7 @@ class LinuxKernels:
                     break
                 else:
                     continue
-            self.kernels.append(data)
+            self.kernels.append(result)
         
     def _get_arch(self):
         return apt_pkg.get_architectures()[0]
@@ -146,8 +146,9 @@ class LinuxKernelsIterator:
 
     def __next__(self):
         if self._index < len(self._kernels.kernels):
+            kernel = self._kernels.kernels[self._index]
             self._index += 1
-            return self._kernels.kernels[self._index]
+            return kernel
 
         raise StopIteration
 
