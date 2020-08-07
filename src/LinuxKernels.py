@@ -214,7 +214,6 @@ class LinuxKernels:
             kernel.installed = kernel.deb_version in self.installed
             kernel.running = kernel.deb_version == self.running_kernel
             self.kernels.append(kernel)
-            print(".", end="", flush=True)
 
     def version(self, version):
         for kernel in self.kernels:
