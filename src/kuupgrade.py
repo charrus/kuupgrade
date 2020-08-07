@@ -18,11 +18,12 @@ if args.list:
         running = ""
         installed = ""
 
-        if kernel.running:
-            running = "[Running]"
-        if kernel.installed:
-            installed = "[Installed]"
-        version = kernel.version
+        if kernel.valid:
+            if kernel.running:
+                running = "[Running]"
+            if kernel.installed:
+                installed = "[Installed]"
+            version = kernel.version
 
-        print(f'{version:10} {running} {installed}');
+            print(f'{version:10} {running} {installed}');
 
