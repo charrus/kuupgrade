@@ -8,14 +8,50 @@ import requests
 import requests_cache
 import subprocess
 
+def split_version(version):
+    sub_versions = version.split('.')
+    major = sub_versions[0]
+    sub_minor = "0"
+    minor = "0"
+    if len(sub_versions) > 1:
+        minor = sub_versions[1]
+        if len(sub_versions) > 2:
+            sub_minor = sub_versions[2]
+    return major,minor,sub_minor
+
+def numeric_version(version):
+    major,minor,subminor = split_version(version)
+
+    re_version = re.compile(r'(\w)?(?P<vers>\d+)(?:-(?P<label>[^-]*)(-(.*)))?')
+
+    m = re_version.match(major)
+    numeric = int(m.group("vers"))
+    numeric *= 1000
+
+    m = re_version.match(minor)
+    numeric += int(m.group("vers"))
+    numeric *= 1000
+    if m.group("label") and m.group("label").startswith("rc"):
+        rc = m.group("label").lstrip("rc")
+        numeric += -500 + int(rc)
+
+    m = re_version.match(subminor)
+    numeric = numeric + int(m.group("vers"))
+
+    return numeric
+
 class LinuxKernel:
     """A Kernel on mainline"""
 
     def __init__(self, version, arch, url):
         self.url = url
-        self.version = version
         self.arch = arch
         self.valid = False
+        self.version = version
+        self.rc = False
+        if version.find("rc"):
+            self.rc = True
+        self.numeric_version = numeric_version(version)
 
     def init(self):
         REX = re.compile(r'<a href="([a-zA-Z0-9\-._\/]+)">([a-zA-Z0-9\-._\/]+)<\/a>')
@@ -74,8 +110,6 @@ class LinuxKernels:
     def __init__(self):
         self.kernels = []
 
-        REX_INDEX = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
-
         # Get our architecture
         apt_pkg.init()
         self.arch = apt_pkg.get_architectures()[0]
@@ -91,73 +125,40 @@ class LinuxKernels:
         # Setup the cache
         requests_cache.install_cache('kuupgrade')
 
-        # Grab the main page
-        with requests_cache.disabled():
-            r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
-
-            for line in REX_INDEX.findall(r.text):
-                kernel = LinuxKernel(version=line[1],
-                                     arch=self.arch,
-                                     url=r.url + line[0])
-                self.kernels.append(kernel)
-
     def __iter__(self):
         return LinuxKernelsIterator(self)
 
-    def init(self):
-        # Create a queue to submit requests for each version
-        self.query_queue = mp.Queue()
-        self.result_queue = mp.Queue()
+    def init(self, min_version="v4.0"):
+        # Grab the main page
+        numeric_min_version = numeric_version(min_version)
 
-        # Attach a process to each worker and start it
-        self.workers = [
-            mp.Process(
-                target=self._add_version_worker, args=(self.query_queue,self.result_queue)
-            )
-            for _ in range(self.NUM_WORKERS)
-        ]
-        for worker in self.workers:
-            worker.start()
+        with requests_cache.disabled():
+            r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
-        # Iterate through all the versions and add them to the queue
-        for kernel in self.kernels:
-            self.query_queue.put(kernel)
+        re_index = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
 
-        # Stop all the workers
-        for _ in range(self.NUM_WORKERS):
-            self.query_queue.put('STOP')
+        for line in re_index.findall(r.text):
+            version = line[1]
+            if numeric_version(version) < numeric_min_version:
+                continue
 
-        remaining = self.NUM_WORKERS
-
-        while True:
-            kernel = self.result_queue.get()
-            if kernel == 'STOP':
-                remaining -= 1
-                if remaining == 0:
-                    break
-                else:
-                    continue
-            kernel.valid = True
-        
-    def add_version(self, kernel):
-        kernel.init()
-        kernel.installed = kernel.deb_version in self.installed
-        kernel.running = kernel.deb_version == self.running_kernel
-
-    def _add_version_worker(self, query_queue,result_queue):
-        while True:
-            kernel = query_queue.get()
-            if kernel == 'STOP':
-                self.result_queue.put('STOP')
-                break
-
+            kernel = LinuxKernel(version=line[1],
+                                 arch=self.arch,
+                                 url=r.url + line[0])
             try:
-                self.add_version(kernel)
+                kernel.init()
             except LookupError:
-                kernel.valid = False
-                continue;
+                continue
 
-            self.result_queue.put(kernel)
+            kernel.installed = kernel.deb_version in self.installed
+            kernel.running = kernel.deb_version == self.running_kernel
+            self.kernels.append(kernel)
+            print(".", end="", flush=True)
+
+    def version(self, version):
+        for kernel in kernels:
+            if kernel.version == version:
+                return kernel
 
 class LinuxKernelsIterator:
     def __init__(self, kernels):
