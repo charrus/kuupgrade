@@ -7,7 +7,7 @@ So far:
 * Install a kernel
 * Remove a kernl
 
-Ultimately it'll have facilities to query available kernels, and the ability to upgrade to the latest, or latest point.
+Ultimately it'll have facilities to upgrade to the latest, or latest point release.
 
 It's very alpha - so will change a lot.
 
