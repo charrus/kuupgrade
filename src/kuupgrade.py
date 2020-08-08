@@ -3,7 +3,7 @@
 import argparse
 import pprint
 
-from LinuxKernels import LinuxKernels
+from LinuxKernels import LinuxKernels, numeric_version
 
 parser = argparse.ArgumentParser(description='Upgrade ubuntu kernel')
 parser.add_argument('--list', action='store_true', help='List available kernels')
@@ -17,9 +17,7 @@ if args.dryrun:
     print("Dry run set - nothing will be installed or removed")
 
 kernels = LinuxKernels()
-print("Initializing: This may take a while the first time")
 kernels.init()
-print("Done.")
 
 if args.list:
     for kernel in kernels:
@@ -31,9 +29,9 @@ if args.list:
         if kernel.installed:
             installed = "[Installed]"
         version = kernel.version
-        deb_version = kernel.deb_version
+        dpkg_version = kernel.dpkg_version
 
-        print(f'{version:20} {deb_version:40} {running} {installed}')
+        print(f'{version:20} {dpkg_version:40} {running} {installed}')
 
 if args.install:
     kernel = kernels.version(args.install)
@@ -45,4 +43,10 @@ if args.remove:
 
 if args.info:
     kernel = kernels.version(args.info)
+    print(f'Release Candidate: {kernel.rc}')
+    print(f'Installed:         {kernel.installed}')
+    print(f'Running:           {kernel.running}')
+    print(f'Dpkg version:      {kernel.dpkg_version}')
+    print(f'Version tuple:     {kernel.release}, {kernel.major}, {kernel.minor}')
+    print(f'Version for cmp:   {kernel.numeric_version}')
     pprint.pprint(kernel.packages)

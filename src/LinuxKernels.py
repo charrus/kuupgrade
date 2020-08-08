@@ -25,47 +25,49 @@ re_all = re.compile(r'<a href="(?P<uri>[a-zA-Z0-9\-._/]+)">'+
                     r'</a>')
 
 # Extract numeric and optional text from versions
-re_version = re.compile(r'(\w)?(?P<vers>\d+)(?:-(?P<label>[^-]*)(-(.*)))?')
+re_version = re.compile(r'[a-zA-Z]?(?P<vers>\d+)(?:-(?P<label>[^-]+))?')
 
 
 def split_version(version):
     """
-    Split the version into major, minor, subminor
+    Split the version into release, major, minor
     """
 
     sub_versions = version.split('.')
-    major = sub_versions[0]
-    sub_minor = "0"
+    release = sub_versions[0]
+    m = re_version.match(release)
+    release = m.group("vers")
     minor = "0"
+    major = "0"
     if len(sub_versions) > 1:
-        minor = sub_versions[1]
+        major = sub_versions[1]
         if len(sub_versions) > 2:
-            sub_minor = sub_versions[2]
-    return major,minor,sub_minor
+            minor = sub_versions[2]
+    return release,major,minor
 
 def numeric_version(version):
     """
     Calculate a numeric form of the version - roughly:
 
-    major * 1000000 + minor * 1000 + subminor
+    release * 1000000 + major * 1000 + minor
 
     Release candidates subtract 500
     """
 
-    major,minor,subminor = split_version(version)
+    release,major,minor = split_version(version)
 
-    m = re_version.match(major)
+    m = re_version.match(release)
     numeric = int(m.group("vers"))
     numeric *= 1000
 
-    m = re_version.match(minor)
+    m = re_version.match(major)
     numeric += int(m.group("vers"))
     numeric *= 1000
     if m.group("label") and m.group("label").startswith("rc"):
         rc = m.group("label").lstrip("rc")
         numeric += -500 + int(rc)
 
-    m = re_version.match(subminor)
+    m = re_version.match(minor)
     numeric = numeric + int(m.group("vers"))
 
     return numeric
@@ -81,6 +83,7 @@ class LinuxKernel:
         self.rc = False
         if version.find("rc"):
             self.rc = True
+        (self.release, self.major, self.minor) = split_version(version)
         self.numeric_version = numeric_version(version)
         self.packages = []
 
@@ -122,7 +125,7 @@ class LinuxKernel:
             package['filename'] = m.group('filename')
             package['package'] = m.group('package')
             self.packages.append(package)
-            self.deb_version = m.group('version')
+            self.dpkg_version = m.group('version')
 
         if not self.packages:
             raise LookupError("Unable to find any versions")
@@ -191,8 +194,17 @@ class LinuxKernels:
     def __iter__(self):
         return LinuxKernelsIterator(self)
 
-    def init(self, min_version="v4.0"):
+    def init(self, min_version="v4.0", release_candidates=False):
         with shelve.open('LinuxKernels') as d:
+            cache_version = "1.3"
+            cache_valid = False
+
+            if 'cache_version' in d and d['cache_version'] == cache_version:
+                cache_valid = True
+            else:
+                d['cache_version'] = cache_version
+                print("Rebuilding cache")
+
             # Grab the main page
             numeric_min_version = numeric_version(min_version)
 
@@ -203,7 +215,7 @@ class LinuxKernels:
                 if numeric_version(version) < numeric_min_version:
                     continue
 
-                if version in d:
+                if cache_valid and version in d:
                     kernel = d[version]
                 else:
                     kernel = LinuxKernel(version=version,
@@ -214,8 +226,8 @@ class LinuxKernels:
                     except LookupError:
                         continue
 
-                    kernel.installed = kernel.deb_version in self.installed
-                    kernel.running = kernel.deb_version == self.running_kernel
+                    kernel.installed = kernel.dpkg_version in self.installed
+                    kernel.running = kernel.dpkg_version == self.running_kernel
                     d[version] = kernel
 
                 self.kernels.append(kernel)
@@ -242,29 +254,22 @@ class PackageList:
     """ Represents a list of installed packages """
 
     def __init__(self):
-        self.packages = self.installed_packages()
+        self.packages = []
 
-    def installed_packages(self):
-        packages = {}
         result = subprocess.run(['dpkg', '-l'], stdout=subprocess.PIPE)
 
-        for dpkg in result.stdout.decode('utf-8').splitlines():
+        for dpkg in result.stdout.decode().splitlines():
             fields = dpkg.split()
             if len(fields) < 5:
                 continue
-            status = fields[0]
-            name = fields[1]
-            version = fields[2]
-            if status != 'ii':
+            if fields[0] != 'ii':
                 continue
-            pkg_id = name + '|' + version
-            packages[pkg_id] = { 'name': name, 'version': version }
-
-        return packages
+            self.packages.append({ 'name': fields[1], 'version': fields[2]})
 
     def get_versions(self, name):
         versions = []
-        for pkg_id in self.packages.keys():
-            if pkg_id.startswith(name):
-                versions.append(self.packages[pkg_id]['version'])
+        for package in self.packages:
+            if package['name'].startswith(name):
+                versions.append(package['version'])
+
         return versions
