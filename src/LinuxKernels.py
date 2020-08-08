@@ -4,7 +4,7 @@ import apt_pkg
 import os.path
 import re
 import requests
-import requests_cache
+import shelve
 import subprocess
 import tempfile
 
@@ -132,24 +132,23 @@ class LinuxKernel:
         """Install the packages for this version
            flavour can be lowlatency, generic etc"""
 
-        with requests_cache.disabled():
-            with tempfile.TemporaryDirectory() as tmpdir:
-                files_to_install = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            files_to_install = []
 
-                for package in self.packages:
-                    if package['flavour'] and package['flavour'] != flavour:
-                        continue
-                    filename = os.path.join(tmpdir,package['filename'])
-                    print("Downloading "+package['url'])
-                    r = requests.get(package['url'])
-                    with open(filename, "wb") as f:
-                        f.write(r.content)
-                    files_to_install.append(filename)
+            for package in self.packages:
+                if package['flavour'] and package['flavour'] != flavour:
+                    continue
+                filename = os.path.join(tmpdir,package['filename'])
+                print("Downloading "+package['url'])
+                r = requests.get(package['url'])
+                with open(filename, "wb") as f:
+                    f.write(r.content)
+                files_to_install.append(filename)
 
-                command = ['sudo', 'apt-get', 'install'] + files_to_install
-                print("Running: "+" ".join(command))
-                if not dryrun:
-                    subprocess.run(command)
+            command = ['sudo', 'apt-get', 'install'] + files_to_install
+            print("Running: "+" ".join(command))
+            if not dryrun:
+                subprocess.run(command)
 
     def remove(self, flavour="generic", dryrun=False):
         """Remove the packages for this version
@@ -189,35 +188,37 @@ class LinuxKernels:
         result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
         self.running_kernel = result.stdout.decode()
 
-        # Setup the cache
-        requests_cache.install_cache('kuupgrade')
-
     def __iter__(self):
         return LinuxKernelsIterator(self)
 
     def init(self, min_version="v4.0"):
-        # Grab the main page
-        numeric_min_version = numeric_version(min_version)
+        with shelve.open('LinuxKernels') as d:
+            # Grab the main page
+            numeric_min_version = numeric_version(min_version)
 
-        with requests_cache.disabled():
             r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
-        for line in re_index.findall(r.text):
-            version = line[1]
-            if numeric_version(version) < numeric_min_version:
-                continue
+            for line in re_index.findall(r.text):
+                version = line[1]
+                if numeric_version(version) < numeric_min_version:
+                    continue
 
-            kernel = LinuxKernel(version=line[1],
-                                 arch=self.arch,
-                                 url=r.url + line[0])
-            try:
-                kernel.init()
-            except LookupError:
-                continue
+                if version in d:
+                    kernel = d[version]
+                else:
+                    kernel = LinuxKernel(version=version,
+                                         arch=self.arch,
+                                         url=r.url + line[0])
+                    try:
+                        kernel.init()
+                    except LookupError:
+                        continue
 
-            kernel.installed = kernel.deb_version in self.installed
-            kernel.running = kernel.deb_version == self.running_kernel
-            self.kernels.append(kernel)
+                    kernel.installed = kernel.deb_version in self.installed
+                    kernel.running = kernel.deb_version == self.running_kernel
+                    d[version] = kernel
+
+                self.kernels.append(kernel)
 
     def version(self, version):
         for kernel in self.kernels:
