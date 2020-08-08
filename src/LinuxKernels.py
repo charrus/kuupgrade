@@ -16,10 +16,13 @@ re_urls = re.compile(r'<a href="[a-zA-Z0-9\-._\/]+">[a-zA-Z0-9\-._\/]+\.deb<\/a>
 
 # Extract a single package parts
 re_all = re.compile(r'<a href="(?P<uri>[a-zA-Z0-9\-._/]+)">'+
-                     r'(?P<dir>[a-z0-9]+/)?'+
-                     r'(?P<package>[a-zA-Z0-9\-.]+)_'+
-                     r'(?P<version>[a-zA-Z0-9\-.\/]+)_'+
-                     r'(?P<arch>[a-zA-Z0-9\-\/]+)\.deb</a>')
+                    r'(?P<dir>[a-z0-9]+/)?'+
+                    r'(?P<filename>'+
+                        r'(?P<package>[a-zA-Z0-9\-.]+)_'+
+                        r'(?P<version>[a-zA-Z0-9\-.\/]+)_'+
+                        r'(?P<arch>[a-zA-Z0-9\-\/]+)\.deb'+
+                    r')'+
+                    r'</a>')
 
 # Extract numeric and optional text from versions
 re_version = re.compile(r'(\w)?(?P<vers>\d+)(?:-(?P<label>[^-]*)(-(.*)))?')
@@ -79,7 +82,7 @@ class LinuxKernel:
         if version.find("rc"):
             self.rc = True
         self.numeric_version = numeric_version(version)
-        self.packages = {}
+        self.packages = []
 
     def __str__(self):
         return self.version
@@ -102,21 +105,23 @@ class LinuxKernel:
             if m.group('arch') not in [self.arch, "all"]:
                 continue
 
-            package_name = m.group('package')
-
-            # Assume that the last bit of the package name is a word, rather
-            # than numbers then this is the flavour of kernel, usually
-            # generic or lowlatency
-            flavour = package_name.split("-")[-1]
-            if not flavour.isalpha():
-                flavour = None
             package = {}
+
+            package_name = m.group('package')
+            # Flavour is the all alpha part of a version appended, for example
+            # generic, lowlatency etc.
+            flavour = package_name.split("-")[-1]
+            if flavour.isalpha():
+                package['flavour'] = flavour
+            else:
+                package['flavour'] = None
             package['url'] = rver.url + m.group('uri')
             package['arch'] = m.group('arch')
             package['version'] = m.group('version')
             package['dir'] = m.group('dir')
-            package['flavour'] = flavour
-            self.packages[package_name] = package
+            package['filename'] = m.group('filename')
+            package['package'] = m.group('package')
+            self.packages.append(package)
             self.deb_version = m.group('version')
 
         if not self.packages:
@@ -131,17 +136,15 @@ class LinuxKernel:
             with tempfile.TemporaryDirectory() as tmpdir:
                 files_to_install = []
 
-                for package in self.packages.keys():
-                    pkgflavour = self.packages[package]['flavour']
-                    if pkgflavour and pkgflavour != flavour:
+                for package in self.packages:
+                    if package['flavour'] and package['flavour'] != flavour:
                         continue
-                    filename = self.packages[package]['url'].split("/")[-1]
-                    fqfilename = os.path.join(tmpdir,filename)
-                    print("Downloading "+self.packages[package]['url'])
-                    r = requests.get(self.packages[package]['url'])
-                    with open(fqfilename, "wb") as f:
+                    filename = os.path.join(tmpdir,package['filename'])
+                    print("Downloading "+package['url'])
+                    r = requests.get(package['url'])
+                    with open(filename, "wb") as f:
                         f.write(r.content)
-                        files_to_install.append(fqfilename)
+                    files_to_install.append(filename)
 
                 command = ['sudo', 'apt-get', 'install'] + files_to_install
                 print("Running: "+" ".join(command))
@@ -154,11 +157,11 @@ class LinuxKernel:
 
         packages_to_rm = []
 
-        for package in self.packages.keys():
-            pkgflavour = self.packages[package]['flavour']
+        for package in self.packages:
+            pkgflavour = package['flavour']
             if pkgflavour and pkgflavour != flavour:
                 continue
-            packages_to_rm.append(package)
+            packages_to_rm.append(package['package'])
 
         command = ['sudo', 'apt-get', 'remove'] + packages_to_rm
         print("Running: "+" ".join(command))
