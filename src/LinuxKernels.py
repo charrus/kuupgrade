@@ -128,7 +128,7 @@ class LinuxKernel:
             raise LookupError("Unable to find any versions")
 
 
-    def install(self, flavour="generic"):
+    def install(self, flavour="generic", dryrun=False):
         """Install the packages for this version
            flavour can be lowlatency, generic etc"""
 
@@ -148,10 +148,10 @@ class LinuxKernel:
 
                 command = ['sudo', 'apt-get', 'install'] + files_to_install
                 print("Running: "+" ".join(command))
-                result = subprocess.run(command)
-                return result
+                if not dryrun:
+                    subprocess.run(command)
 
-    def remove(self, flavour="generic"):
+    def remove(self, flavour="generic", dryrun=False):
         """Remove the packages for this version
            flavour can be lowlatency, generic etc"""
 
@@ -165,9 +165,8 @@ class LinuxKernel:
 
         command = ['sudo', 'apt-get', 'remove'] + packages_to_rm
         print("Running: "+" ".join(command))
-        result = subprocess.run(command)
-        return result
-
+        if not dryrun:
+            subprocess.run(command)
 
 class LinuxKernels:
     """All Kernel on mainline"""
