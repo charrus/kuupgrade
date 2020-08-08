@@ -143,9 +143,10 @@ class LinuxKernel:
                         f.write(r.content)
                         files_to_install.append(fqfilename)
 
-                command = ['apt-get', 'install'] + files_to_install
+                command = ['sudo', 'apt-get', 'install'] + files_to_install
                 print("Running: "+" ".join(command))
-                result = subprocess.run(command, stdout=subprocess.PIPE)
+                result = subprocess.run(command)
+                return result
 
     def remove(self, flavour="generic"):
         """Remove the packages for this version
@@ -159,9 +160,10 @@ class LinuxKernel:
                 continue
             packages_to_rm.append(package)
 
-        command = ['apt-get', 'remove'] + packages_to_rm
+        command = ['sudo', 'apt-get', 'remove'] + packages_to_rm
         print("Running: "+" ".join(command))
-        result = subprocess.run(command, stdout=subprocess.PIPE)
+        result = subprocess.run(command)
+        return result
 
 
 class LinuxKernels:

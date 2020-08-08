@@ -7,9 +7,9 @@ from LinuxKernels import LinuxKernels
 
 parser = argparse.ArgumentParser(description='Upgrade ubuntu kernel')
 parser.add_argument('--list', action='store_true', help='List available kernels')
-parser.add_argument('--install', help='Install kernel')
-parser.add_argument('--remove', help='Remove kernel')
-parser.add_argument('--info', help='Kernel info')
+parser.add_argument('--install', help='Install kernel', metavar='version')
+parser.add_argument('--remove', help='Remove kernel', metavar='version')
+parser.add_argument('--info', help='Kernel info', metavar='version')
 args = parser.parse_args()
 
 kernels = LinuxKernels()
