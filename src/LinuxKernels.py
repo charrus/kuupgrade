@@ -2,6 +2,7 @@
 
 import apt_pkg
 import os.path
+from os import getenv
 import re
 import requests
 import shelve
@@ -30,6 +31,7 @@ re_all = re.compile(r'<a href="(?P<uri>[a-zA-Z0-9\-._/]+)">' +
 re_version = re.compile(r'[a-zA-Z]?(?P<vers>\d+)(?:-(?P<label>[^-]+))?')
 
 
+# Helper functions to deal with kernel versions used by the site - i.e. v4.7.9
 def split_version(version):
     """
     Split the version into release, major, minor
@@ -154,9 +156,10 @@ class LinuxKernel:
             # eg.
             # filename: linux-image-unsigned-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
             #                                ^--- kern_version --^ ^----- dpkg_version -----^
+            #           ^------------ package -------------------^ ^------ version ---------^ ^arc^
             # gives us:
-            # dpkg_version: 5.6.19-050619.202006171132
-            # kern_version: 5.6.19-050619-generic
+            # dpkg_version: 5.6.19-050619.202006171132 (from the package version)
+            # kern_version: 5.6.19-050619-generic      (from the package name)
             if package['package'].startswith("linux-image"):
                 self.kern_versions.append("-".join(m.group('package').split("-")[-3:]))
                 if not self.dpkg_version:
@@ -230,20 +233,31 @@ class LinuxKernels:
         return LinuxKernelsIterator(self)
 
     def init(self, min_version="v4.0", release_candidates=False):
-        with shelve.open('LinuxKernels.cache') as d:
+        """ Do the heavy lifting of init - parse and cache all the pages """
+
+        cache_file = os.path.join(getenv("HOME"), ".LinuxKernels.cache")
+        with shelve.open(cache_file) as d:
             cache_version = "1.9"
             cache_valid = False
 
+            # Rebuild the cache if the version above is changed - this version
+            # should reflect only changes in the LinuxKenrel attributes
+            # introduced with a code change, or fixing incorrect values
+            # down to bugs
             if 'cache_version' in d and d['cache_version'] == cache_version:
                 cache_valid = True
             else:
                 print("Rebuilding cache")
 
-            # Grab the main page
+            # Convert the minimum version into a sortable value
             numeric_min_version = numeric_version(min_version)
 
+            # Grab the main page
             r = requests.get(self.URI_KERNEL_UBUNTU_MAINLINE)
 
+            # Just go through all the <a href's - skip if we're
+            # not interested, load it from cache, or scrape if it's
+            # not there
             for line in re_index.findall(r.text):
                 version = line[1]
                 if numeric_version(version) < numeric_min_version:
@@ -262,19 +276,24 @@ class LinuxKernels:
 
                     d[version] = kernel
 
+                # These attributes change on the local system, which is why
+                # they're outside the fetching of the data for that version
                 kernel.installed = kernel.dpkg_version in self.installed
                 kernel.running = self.running_kernel in kernel.kern_versions
                 self.kernels.append(kernel)
 
+            # Finally we got to the end, so mark the cache as valid
             d['cache_version'] = cache_version
 
     def version(self, version):
+        """ Return the kernel that matches the version listed on the site """
         for kernel in self.kernels:
             if kernel.version == version:
                 return kernel
 
 
 class LinuxKernelsIterator:
+    """ Add an iterator for LinuxKernels to try that out """
     def __init__(self, kernels):
         self._kernels = kernels
         self._index = 0
