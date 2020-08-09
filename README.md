@@ -57,6 +57,9 @@ Initializing...
 Done.
 Running: apt-get remove linux-headers-5.6.19-050619-generic linux-headers-5.6.19-050619 linux-image-unsigned-5.6.19-050619-generic linux-modules-5.6.19-050619-generic
 ```
+
+## Getting information on a kernel
+```
 $ ./kuupgrade.py --info v5.6.19
 Release Candidate: False
 Installed:         True
