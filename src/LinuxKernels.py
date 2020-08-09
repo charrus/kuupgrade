@@ -9,19 +9,21 @@ import subprocess
 import tempfile
 
 # Parse the main page for links to versions
-re_index = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">([a-zA-Z0-9\-._]+)\/<\/a>')
+re_index = re.compile(r'<a href="(v[a-zA-Z0-9\-._]+\/)">' +
+                      r'([a-zA-Z0-9\-._]+)\/<\/a>')
 
 # Extract all the links in the version page
-re_urls = re.compile(r'<a href="[a-zA-Z0-9\-._\/]+">[a-zA-Z0-9\-._\/]+\.deb<\/a>')
+re_urls = re.compile(r'<a href="[a-zA-Z0-9\-._\/]+">' +
+                     r'[a-zA-Z0-9\-._\/]+\.deb<\/a>')
 
 # Extract a single package parts
-re_all = re.compile(r'<a href="(?P<uri>[a-zA-Z0-9\-._/]+)">'+
-                    r'(?P<dir>[a-z0-9]+/)?'+
-                    r'(?P<filename>'+
-                        r'(?P<package>[a-zA-Z0-9\-.]+)_'+
-                        r'(?P<version>[a-zA-Z0-9\-.\/]+)_'+
-                        r'(?P<arch>[a-zA-Z0-9\-\/]+)\.deb'+
-                    r')'+
+re_all = re.compile(r'<a href="(?P<uri>[a-zA-Z0-9\-._/]+)">' +
+                    r'(?P<dir>[a-z0-9]+/)?' +
+                    r'(?P<filename>' +
+                    r'(?P<package>[a-zA-Z0-9\-.]+)_' +
+                    r'(?P<version>[a-zA-Z0-9\-.\/]+)_' +
+                    r'(?P<arch>[a-zA-Z0-9\-\/]+)\.deb' +
+                    r')' +
                     r'</a>')
 
 # Extract numeric and optional text from versions
@@ -43,7 +45,8 @@ def split_version(version):
         major = sub_versions[1]
         if len(sub_versions) > 2:
             minor = sub_versions[2]
-    return release,major,minor
+    return release, major, minor
+
 
 def numeric_version(version):
     """
@@ -54,7 +57,7 @@ def numeric_version(version):
     Release candidates subtract 500
     """
 
-    release,major,minor = split_version(version)
+    release, major, minor = split_version(version)
 
     m = re_version.match(release)
     numeric = int(m.group("vers"))
@@ -71,6 +74,7 @@ def numeric_version(version):
     numeric = numeric + int(m.group("vers"))
 
     return numeric
+
 
 class LinuxKernel:
     """A Kernel on mainline"""
@@ -130,7 +134,6 @@ class LinuxKernel:
         if not self.packages:
             raise LookupError("Unable to find any versions")
 
-
     def install(self, flavour="generic", dryrun=False):
         """Install the packages for this version
            flavour can be lowlatency, generic etc"""
@@ -141,7 +144,7 @@ class LinuxKernel:
             for package in self.packages:
                 if package['flavour'] and package['flavour'] != flavour:
                     continue
-                filename = os.path.join(tmpdir,package['filename'])
+                filename = os.path.join(tmpdir, package['filename'])
                 print("Downloading "+package['url'])
                 r = requests.get(package['url'])
                 with open(filename, "wb") as f:
@@ -169,6 +172,7 @@ class LinuxKernel:
         print("Running: "+" ".join(command))
         if not dryrun:
             subprocess.run(command)
+
 
 class LinuxKernels:
     """All Kernel on mainline"""
@@ -237,6 +241,7 @@ class LinuxKernels:
             if kernel.version == version:
                 return kernel
 
+
 class LinuxKernelsIterator:
     def __init__(self, kernels):
         self._kernels = kernels
@@ -249,6 +254,7 @@ class LinuxKernelsIterator:
             return kernel
 
         raise StopIteration
+
 
 class PackageList:
     """ Represents a list of installed packages """
@@ -264,7 +270,7 @@ class PackageList:
                 continue
             if fields[0] != 'ii':
                 continue
-            self.packages.append({ 'name': fields[1], 'version': fields[2]})
+            self.packages.append({'name': fields[1], 'version': fields[2]})
 
     def get_versions(self, name):
         versions = []

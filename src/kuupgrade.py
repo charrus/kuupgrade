@@ -6,7 +6,8 @@ import pprint
 from LinuxKernels import LinuxKernels, numeric_version
 
 parser = argparse.ArgumentParser(description='Upgrade ubuntu kernel')
-parser.add_argument('--list', action='store_true', help='List available kernels')
+parser.add_argument('--list', action='store_true',
+                    help='List available kernels')
 parser.add_argument('--dryrun', action='store_true', help='Dry run mode')
 parser.add_argument('--install', help='Install kernel', metavar='version')
 parser.add_argument('--remove', help='Remove kernel', metavar='version')
@@ -35,11 +36,11 @@ if args.list:
 
 if args.install:
     kernel = kernels.version(args.install)
-    kernel.install(dryrun = args.dryrun)
+    kernel.install(dryrun=args.dryrun)
 
 if args.remove:
     kernel = kernels.version(args.remove)
-    kernel.remove(dryrun = args.dryrun)
+    kernel.remove(dryrun=args.dryrun)
 
 if args.info:
     kernel = kernels.version(args.info)
@@ -47,6 +48,7 @@ if args.info:
     print(f'Installed:         {kernel.installed}')
     print(f'Running:           {kernel.running}')
     print(f'Dpkg version:      {kernel.dpkg_version}')
-    print(f'Version tuple:     {kernel.release}, {kernel.major}, {kernel.minor}')
+    print(f'Version tuple:     {kernel.release}, {kernel.major}, ' +
+          f'{kernel.minor}')
     print(f'Version for cmp:   {kernel.numeric_version}')
     pprint.pprint(kernel.packages)
