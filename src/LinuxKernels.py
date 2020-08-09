@@ -82,6 +82,7 @@ class LinuxKernel:
     """A Kernel on mainline"""
 
     def __init__(self, version, arch, url):
+        # Populate when we can
         self.url = url
         self.arch = arch
         self.valid = False
@@ -104,16 +105,19 @@ class LinuxKernel:
         return self.numeric_version < other.numeric_version
 
     def init(self):
-        # Grab the version page
+        # Get more detailed info by parsing the version's page
         rver = requests.get(self.url)
 
         self.dpkg_version = None
 
+        # Get all <a href='s
         for debs in re_urls.findall(rver.text):
+            # Parse the ones that are dpkgs
             m = re_all.match(debs)
             if not m:
                 continue
 
+            # Skip if it's the wrong architecture
             if m.group('arch') not in [self.arch, "all"]:
                 continue
 
@@ -175,6 +179,8 @@ class LinuxKernel:
         """Install the packages for this version
            flavour can be lowlatency, generic etc"""
 
+        # Create a tempory directory, download the required dpkg's and then
+        # install them if not dryrun mode
         with tempfile.TemporaryDirectory() as tmpdir:
             files_to_install = []
 
@@ -198,6 +204,10 @@ class LinuxKernel:
 
         packages_to_rm = []
 
+        # Treating mainline as the source for packages, this will only remove
+        # ones installed with this or similar tools. Standard & HWE are outside
+        # the scope. Currently this is the same list that would be installed,
+        # but perhaps it should be more promiscuous - remove i386 & lowlatency
         for package in self.packages:
             if package['flavour'] in [self.flavour, "all"]:
                 packages_to_rm.append(package['package'])
@@ -217,7 +227,7 @@ class LinuxKernels:
     def __init__(self):
         self.kernels = []
 
-        # Get our architecture
+        # Get our architecture: amd64/armv6/sparc
         apt_pkg.init()
         self.arch = apt_pkg.get_architectures()[0]
 
@@ -236,7 +246,7 @@ class LinuxKernels:
         """ Do the heavy lifting of init - parse and cache all the pages """
 
         cache_file = os.path.join(getenv("HOME"), ".LinuxKernels.cache")
-        with shelve.open(cache_file) as d:
+        with shelve.open(cache_file) as cache:
             cache_version = "1.11"
             cache_valid = False
 
@@ -244,10 +254,14 @@ class LinuxKernels:
             # should reflect only changes in the LinuxKenrel attributes
             # introduced with a code change, or fixing incorrect values
             # down to bugs
-            if 'cache_version' in d and d['cache_version'] == cache_version:
+            if 'cache_version' in cache and cache['cache_version'] == cache_version:
                 cache_valid = True
             else:
                 print("Rebuilding cache")
+                # Format has changed - so delete the cache version - from now
+                # on it'll be a miss-mash. Probably best just remove the whole
+                # thing tbh
+                del cache['cache_version']
 
             # Convert the minimum version into a sortable value
             numeric_min_version = numeric_version(min_version)
@@ -263,27 +277,37 @@ class LinuxKernels:
                 if numeric_version(version) < numeric_min_version:
                     continue
 
-                if cache_valid and version in d:
-                    kernel = d[version]
+                if cache_valid and version in cache:
+                    kernel = cache[version]
                 else:
                     kernel = LinuxKernel(version=version,
                                          arch=self.arch,
                                          url=r.url + line[0])
+                    # This raises an exception if page cannot be parsed, or
+                    # incorrect arch, flavour.
+                    # This needs fixing and done in the constructor above
+                    # ao the kernel object is never created in the first
+                    # place.
+                    # Currently it just skips adding it to the list of
+                    # kernel versions
                     try:
                         kernel.init()
                     except LookupError:
                         continue
 
-                    d[version] = kernel
+                    # Cache all that hard parsing work in LinuxKernel
+                    cache[version] = kernel
 
-                # These attributes change on the local system, which is why
-                # they're outside the fetching of the data for that version
+                # kernels versions are idempotent - so cached above
+                # If they're installed, or currently running is rather
+                # more dynamic
                 kernel.installed = kernel.dpkg_version in self.installed
                 kernel.running = self.running_kernel in kernel.kern_versions
                 self.kernels.append(kernel)
 
-            # Finally we got to the end, so mark the cache as valid
-            d['cache_version'] = cache_version
+            # We're at the end of kernel versions - we're now at the same
+            # cache version.
+            cache['cache_version'] = cache_version
 
     def version(self, version):
         """ Return the kernel that matches the version listed on the site """
@@ -316,6 +340,7 @@ class PackageList:
         result = subprocess.run(['dpkg', '-l'], stdout=subprocess.PIPE)
 
         for dpkg in result.stdout.decode().splitlines():
+            # Predictable output - let's make assumptions
             fields = dpkg.split()
             if len(fields) < 5:
                 continue
@@ -324,7 +349,9 @@ class PackageList:
             self.packages.append({'name': fields[1], 'version': fields[2]})
 
     def get_versions(self, name):
+        """ Look for packages with a prefix - like linux-image """
         versions = []
+
         for package in self.packages:
             if package['name'].startswith(name):
                 versions.append(package['version'])
