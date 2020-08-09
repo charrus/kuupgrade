@@ -85,11 +85,12 @@ class LinuxKernel:
         self.valid = False
         self.version = version
         self.rc = False
-        if version.find("rc"):
-            self.rc = True
         (self.release, self.major, self.minor) = split_version(version)
+        if "rc" in self.major:
+            self.rc = True
         self.numeric_version = numeric_version(version)
         self.packages = []
+        self.kern_versions = []
 
     def __str__(self):
         return self.version
@@ -104,6 +105,8 @@ class LinuxKernel:
         # Grab the version page
         rver = requests.get(self.url)
 
+        self.dpkg_version = None
+
         for debs in re_urls.findall(rver.text):
             m = re_all.match(debs)
             if not m:
@@ -112,6 +115,19 @@ class LinuxKernel:
             if m.group('arch') not in [self.arch, "all"]:
                 continue
 
+            # This extracts details about the package
+            # eg (with the full url truncated to make it clearer).
+            # url: amd64/linux-image-unsigned-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+            #                                               ^ flvr^ 
+            #            ^------------ package -------------------^ ^------ version ---------^ ^arc^
+            #      ^dir^ ^-----------------------  filename  ------------------------------------------^
+            # gives us:
+            # filename: linux-image-unsigned-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+            # package: linux-image-unsigned-5.6.19-050619-generic
+            # version: 5.6.19-050619.202006171132
+            # flavour: generic (flvr above)
+            # arch: amd64      (arc above)
+            # dir: amd64/
             package = {}
 
             package_name = m.group('package')
@@ -129,7 +145,22 @@ class LinuxKernel:
             package['filename'] = m.group('filename')
             package['package'] = m.group('package')
             self.packages.append(package)
-            self.dpkg_version = m.group('version')
+
+            # If this is one of the linux-image packes, then record both
+            # the package and kernel version (so it matches uname -r)
+            # linux-image is used as this will have the flavour
+            # embedded in the package name. Note we're setting these at the
+            # kernel level, not per package as above.
+            # eg.
+            # filename: linux-image-unsigned-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+            #                                ^--- kern_version --^ ^----- dpkg_version -----^
+            # gives us:
+            # dpkg_version: 5.6.19-050619.202006171132
+            # kern_version: 5.6.19-050619-generic
+            if package['package'].startswith("linux-image"):
+                self.kern_versions.append("-".join(m.group('package').split("-")[-3:]))
+                if not self.dpkg_version:
+                    self.dpkg_version = m.group('version')
 
         if not self.packages:
             raise LookupError("Unable to find any versions")
@@ -192,21 +223,20 @@ class LinuxKernels:
         self.installed = pkg_list.get_versions('linux-image')
 
         # Get the running kernel
-        result = subprocess.run(['uname', '-r'], stdout=subprocess.PIPE)
-        self.running_kernel = result.stdout.decode()
+        result = subprocess.check_output(['uname', '-r'])
+        self.running_kernel = result.decode().rstrip()
 
     def __iter__(self):
         return LinuxKernelsIterator(self)
 
     def init(self, min_version="v4.0", release_candidates=False):
-        with shelve.open('LinuxKernels') as d:
-            cache_version = "1.3"
+        with shelve.open('LinuxKernels.cache') as d:
+            cache_version = "1.9"
             cache_valid = False
 
             if 'cache_version' in d and d['cache_version'] == cache_version:
                 cache_valid = True
             else:
-                d['cache_version'] = cache_version
                 print("Rebuilding cache")
 
             # Grab the main page
@@ -230,11 +260,13 @@ class LinuxKernels:
                     except LookupError:
                         continue
 
-                    kernel.installed = kernel.dpkg_version in self.installed
-                    kernel.running = kernel.dpkg_version == self.running_kernel
                     d[version] = kernel
 
+                kernel.installed = kernel.dpkg_version in self.installed
+                kernel.running = self.running_kernel in kernel.kern_versions
                 self.kernels.append(kernel)
+
+            d['cache_version'] = cache_version
 
     def version(self, version):
         for kernel in self.kernels:

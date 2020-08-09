@@ -48,6 +48,7 @@ if args.info:
     print(f'Installed:         {kernel.installed}')
     print(f'Running:           {kernel.running}')
     print(f'Dpkg version:      {kernel.dpkg_version}')
+    print(f'Kernel versions:   {kernel.kern_versions}')
     print(f'Version tuple:     {kernel.release}, {kernel.major}, ' +
           f'{kernel.minor}')
     print(f'Version for cmp:   {kernel.numeric_version}')
