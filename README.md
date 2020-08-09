@@ -41,8 +41,6 @@ v5.7.2               5.7.2-050702.202006101934
 ## Installing a kernel
 ```
 $ ./kuupgrade.py --install v5.8
-Initializing...
-Done.
 Downloading https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.8/amd64/linux-headers-5.8.0-050800-generic_5.8.0-050800.202008022230_amd64.deb
 Downloading https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.8/amd64/linux-headers-5.8.0-050800_5.8.0-050800.202008022230_all.deb
 Downloading https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.8/amd64/linux-image-unsigned-5.8.0-050800-generic_5.8.0-050800.202008022230_amd64.deb
@@ -53,8 +51,6 @@ Running: apt-get install /tmp/tmppcglp1s7/linux-headers-5.8.0-050800-generic_5.8
 ## Removing a kernel
 ```
 $ ./kuupgrade.py --remove v5.6.19
-Initializing...
-Done.
 Running: apt-get remove linux-headers-5.6.19-050619-generic linux-headers-5.6.19-050619 linux-image-unsigned-5.6.19-050619-generic linux-modules-5.6.19-050619-generic
 ```
 
