@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import argparse
-import pprint
 
 from LinuxKernels import LinuxKernels, numeric_version
 
@@ -49,7 +48,13 @@ if args.info:
     print(f'Running:           {kernel.running}')
     print(f'Dpkg version:      {kernel.dpkg_version}')
     print(f'Kernel versions:   {kernel.kern_versions}')
-    print(f'Version tuple:     {kernel.release}, {kernel.major}, ' +
-          f'{kernel.minor}')
+    print(f'Version tuple:     [ {kernel.release}, {kernel.major}, ' +
+          f'{kernel.minor} ]')
     print(f'Version for cmp:   {kernel.numeric_version}')
-    pprint.pprint(kernel.packages)
+    print("Package list:")
+    for package in kernel.packages:
+        print(f"    {package['package']}")
+        print(f'        arch:     {package["arch"]}')
+        print(f'        flavour:  {package["flavour"]}')
+        print(f'        url:      {package["url"]}')
+        print(f'        filename: {package["filename"]}')

@@ -139,7 +139,7 @@ class LinuxKernel:
             if flavour.isalpha():
                 package['flavour'] = flavour
             else:
-                package['flavour'] = None
+                package['flavour'] = "all"
             package['url'] = rver.url + m.group('uri')
             package['arch'] = m.group('arch')
             package['version'] = m.group('version')
@@ -165,7 +165,10 @@ class LinuxKernel:
                 if not self.dpkg_version:
                     self.dpkg_version = m.group('version')
 
-        if not self.packages:
+        # If there are no packages lets kill ourselves now
+        # If no dpkg version was extracted, this means we could
+        # only fine the all arch ones - nothign for our arch.
+        if not self.packages or not self.dpkg_version:
             raise LookupError("Unable to find any versions")
 
     def install(self, flavour="generic", dryrun=False):
@@ -176,17 +179,16 @@ class LinuxKernel:
             files_to_install = []
 
             for package in self.packages:
-                if package['flavour'] and package['flavour'] != flavour:
-                    continue
-                filename = os.path.join(tmpdir, package['filename'])
-                print("Downloading "+package['url'])
-                r = requests.get(package['url'])
-                with open(filename, "wb") as f:
-                    f.write(r.content)
-                files_to_install.append(filename)
+                if package['flavour'] in [self.flavour, "all"]:
+                    filename = os.path.join(tmpdir, package['filename'])
+                    print(f"Downloading {package['url']}")
+                    r = requests.get(package['url'])
+                    with open(filename, "wb") as f:
+                        f.write(r.content)
+                    files_to_install.append(filename)
 
             command = ['sudo', 'apt-get', 'install'] + files_to_install
-            print("Running: "+" ".join(command))
+            print(f"Running: {join(command)}")
             if not dryrun:
                 subprocess.run(command)
 
@@ -197,13 +199,11 @@ class LinuxKernel:
         packages_to_rm = []
 
         for package in self.packages:
-            pkgflavour = package['flavour']
-            if pkgflavour and pkgflavour != flavour:
-                continue
-            packages_to_rm.append(package['package'])
+            if package['flavour'] in [self.flavour, "all"]:
+                packages_to_rm.append(package['package'])
 
         command = ['sudo', 'apt-get', 'remove'] + packages_to_rm
-        print("Running: "+" ".join(command))
+        print(f"Running: {join(command)}")
         if not dryrun:
             subprocess.run(command)
 
@@ -237,7 +237,7 @@ class LinuxKernels:
 
         cache_file = os.path.join(getenv("HOME"), ".LinuxKernels.cache")
         with shelve.open(cache_file) as d:
-            cache_version = "1.9"
+            cache_version = "1.11"
             cache_valid = False
 
             # Rebuild the cache if the version above is changed - this version
