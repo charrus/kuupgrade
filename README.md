@@ -57,3 +57,48 @@ Initializing...
 Done.
 Running: apt-get remove linux-headers-5.6.19-050619-generic linux-headers-5.6.19-050619 linux-image-unsigned-5.6.19-050619-generic linux-modules-5.6.19-050619-generic
 ```
+$ ./kuupgrade.py --info v5.6.19
+Release Candidate: False
+Installed:         True
+Running:           True
+Dpkg version:      5.6.19-050619.202006171132
+Kernel versions:   ['5.6.19-050619-generic', '5.6.19-050619-lowlatency']
+Version tuple:     [ 5, 6, 19 ]
+Version for cmp:   5006019
+Package list:
+    linux-headers-5.6.19-050619-generic
+        arch:     amd64
+        flavour:  generic
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-headers-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+        filename: linux-headers-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+    linux-headers-5.6.19-050619-lowlatency
+        arch:     amd64
+        flavour:  lowlatency
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-headers-5.6.19-050619-lowlatency_5.6.19-050619.202006171132_amd64.deb
+        filename: linux-headers-5.6.19-050619-lowlatency_5.6.19-050619.202006171132_amd64.deb
+    linux-headers-5.6.19-050619
+        arch:     all
+        flavour:  all
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-headers-5.6.19-050619_5.6.19-050619.202006171132_all.deb
+        filename: linux-headers-5.6.19-050619_5.6.19-050619.202006171132_all.deb
+    linux-image-unsigned-5.6.19-050619-generic
+        arch:     amd64
+        flavour:  generic
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-image-unsigned-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+        filename: linux-image-unsigned-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+    linux-image-unsigned-5.6.19-050619-lowlatency
+        arch:     amd64
+        flavour:  lowlatency
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-image-unsigned-5.6.19-050619-lowlatency_5.6.19-050619.202006171132_amd64.deb
+        filename: linux-image-unsigned-5.6.19-050619-lowlatency_5.6.19-050619.202006171132_amd64.deb
+    linux-modules-5.6.19-050619-generic
+        arch:     amd64
+        flavour:  generic
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-modules-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+        filename: linux-modules-5.6.19-050619-generic_5.6.19-050619.202006171132_amd64.deb
+    linux-modules-5.6.19-050619-lowlatency
+        arch:     amd64
+        flavour:  lowlatency
+        url:      https://kernel.ubuntu.com/~kernel-ppa/mainline/v5.6.19/amd64/linux-modules-5.6.19-050619-lowlatency_5.6.19-050619.202006171132_amd64.deb
+        filename: linux-modules-5.6.19-050619-lowlatency_5.6.19-050619.202006171132_amd64.deb
+```
